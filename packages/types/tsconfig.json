@@ -1,0 +1,10 @@
+{
+  "extends": "@repo/typescript-config/base.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "declaration": true, // used for generating types file
+    "declarationMap": true // maps the .d.ts to .ts
+  },
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist"]
+}
