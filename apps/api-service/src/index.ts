@@ -2,6 +2,7 @@ import express from "express";
 import cors from "cors";
 import cookieParser from "cookie-parser";
 import authRouter from "./routes/auth.routes";
+import balanceRouter from "./routes/balance.routes";
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -39,6 +40,7 @@ app.get("/health", (req, res) => {
 });
 
 app.use("/auth", authRouter);
+app.use("/balance", balanceRouter);
 
 app.listen(PORT, () => {
   console.log(`API service running on port ${PORT}`);
