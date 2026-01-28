@@ -9,9 +9,9 @@ export class RedisSubscriber {
     const host = process.env.REDIS_HOST || "localhost";
     const port = Number(process.env.REDIS_PORT || 6379);
     this.client = new Redis({ host, port });
-    // run loop
+    this.callbacks = {};
+    this.runLoop();
   }
-
   async runLoop() {
     while (true) {
       try {
@@ -25,22 +25,47 @@ export class RedisSubscriber {
         if (!response || response.length === 0) continue;
 
         const [, messages] = response[0]!;
-
         if (!messages || messages.length === 0) continue;
 
-        for (const [id, rawfields] of messages) {
-          const fields = rawfields as string[];
+        for (const [id, rawFields] of messages) {
+          const fields = rawFields as string[];
 
           const data: Record<string, string> = {};
-          for (let i = 0; i < fields.length; i += 2) {
+          for (let i = 0; i < fields.length; i += 2)
             data[fields[i]!] = fields[i + 1]!;
 
-            const callback = data.id;
-            console.log(`[SUBSCRIBER] Received callback`, data);
-            // complete this logic
+          const callbackId = data.id;
+          console.log(`[SUBSCRIBER] Received callback:`, data);
+
+          const fn = callbackId ? this.callbacks[callbackId] : undefined;
+          if (fn) {
+            fn(data);
+            delete this.callbacks[callbackId!];
+          } else {
+            console.log(`[SUBSCRIBER] No waiter for id: ${callbackId}`);
           }
         }
-      } catch (error) {}
+      } catch (err) {
+        console.error(`[SUBSCRIBER] xread error:`, err);
+      }
     }
+  }
+
+  waitForMessage(callbackId: string) {
+    return new Promise<Record<string, string>>((resolve, reject) => {
+      console.log(`[SUBSCRIBER] Waiting for callback id: ${callbackId}`);
+
+      const timer = setTimeout(() => {
+        if (this.callbacks[callbackId]) {
+          delete this.callbacks[callbackId];
+          reject(new Error("Timeout waiting for message"));
+        }
+      }, 5000);
+
+      this.callbacks[callbackId] = (data: Record<string, string>) => {
+        clearTimeout(timer);
+        resolve(data);
+      };
+    });
   }
 }
