@@ -45,3 +45,62 @@ function getFieldValue(fields: string[], key: string) {
 
   return undefined;
 }
+
+async function updateBalanceInDatabase(
+  userId: string,
+  symbol: string,
+  newBalanceFloat: number,
+) {
+  try {
+    await prisma.asset.upsert({
+      where: { user_symbol_unique: { userId, symbol: symbol as any } },
+      create: {
+        userId,
+        symbol: symbol as any,
+        balance: Math.round(newBalanceFloat * 100), // stored in cents
+        decimals: 2,
+      },
+      update: { balance: Math.round(newBalanceFloat * 100) },
+    });
+    console.log(`Updated ${symbol} balance for ${userId}: ${newBalanceFloat}`);
+  } catch (error) {
+    console.error(`Failed to update balance for ${userId}:`, error);
+  }
+}
+
+function getMemBalance(
+  userId: string,
+  symbol: string,
+  snapshot?: Array<{ symbol: string; balance: number; decimals: number }>,
+) {
+  if (!balances[userId]) balances[userId] = {};
+
+  if (snapshot) {
+    const snap = snapshot.find((a) => a.symbol === symbol);
+
+    if (snap) {
+      const decimals = snap.decimals ?? 2;
+      const val = snap.balance / 10 ** decimals;
+      balances[userId][symbol] = val;
+      return val;
+    }
+  }
+
+  return balances[userId][symbol];
+}
+
+function setMemBalance(userId: string, symbol: string, newVal: number) {
+  if (!balances[userId]) balances[userId] = {};
+  balances[userId][symbol] = newVal;
+  return newVal;
+}
+
+async function checkLiquidations() {
+  for (let i = open_orders.length - 1; i >= 0; i--) {
+    const order = open_orders[i];
+
+    if (!order) continue;
+
+    const symbol = order.asset;
+  }
+}
