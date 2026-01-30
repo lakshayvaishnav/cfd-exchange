@@ -87,6 +87,65 @@ function setMemBalance(userId: string, symbol: string, newVal: number) {
   return newVal;
 }
 
+async function createSnapshot() {
+  try {
+    for (const order of open_orders) {
+      const symbol = order.asset;
+      const currentBidPrice = bidPrices[symbol];
+      const currentAskPrice = askPrices[symbol];
+
+      if (!currentBidPrice || !currentAskPrice) continue;
+
+      let currentPnl = 0;
+      if (currentBidPrice && currentAskPrice) {
+        const currentPriceForOrder = order.side === "long" ? currentBidPrice : currentAskPrice;
+        currentPnl = order.side === "long" ? (currentPriceForOrder - order.openingPrice) * order.qty : (order.openingPrice - currentPriceForOrder) * order.qty;
+      }
+
+      await prisma.order.upsert({
+        where: { id: order.id },
+        update: {
+          side: order.side,
+          pnl: Math.round(currentPnl * 10000),
+          decimals: 4,
+          openingPrice: Math.round(order.openingPrice * 10000),
+          closingPrice: 0,
+          status: "open",
+          qty: Math.round(order.qty * 100),
+          qtyDecimals: 2,
+          leverage: order.leverage || 1,
+          takeProfit: order.takeProfit ? Math.round(order.takeProfit * 10000) : null,
+          stopLoss: order.stopLoss ? Math.round(order.stopLoss * 10000) : null,
+          margin: Math.round((order.openingPrice * order.qty * 100) / (order.leverage || 1)),
+        },
+        create: {
+          id: order.id,
+          userId: order.userId,
+          side: order.side,
+          pnl: Math.round(currentPnl * 10000),
+          decimals: 4,
+          openingPrice: Math.round(order.openingPrice * 10000),
+          closingPrice: 0,
+          status: "open",
+          qty: Math.round(order.qty * 100),
+          qtyDecimals: 2,
+          leverage: order.leverage || 1,
+          takeProfit: order.takeProfit ? Math.round(order.takeProfit * 10000) : null,
+          stopLoss: order.stopLoss ? Math.round(order.stopLoss * 10000) : null,
+          margin: Math.round((order.openingPrice * order.qty * 100) / (order.leverage || 1)),
+          createdAt: new Date(order.createdAt),
+        } as any,
+      });
+    }
+
+    await checkLiquidations();
+
+    console.log("snapshot sent");
+  } catch (e) {
+    console.log(e);
+  }
+}
+
 /*
 it checks three conditions
 1. take profit
@@ -202,7 +261,8 @@ async function checkLiquidations() {
 
     const currentPriceForOrder = order.side === "long" ? currentBidPrice : currentAskPrice;
 
-    // process order liquidation....
+    const result = await processOrderLiquidation(order, currentPriceForOrder, "preodic-check");
+    if (result.liquidated) open_orders.splice(i, 1);
   }
 }
 
@@ -235,3 +295,5 @@ async function loadSnapshot() {
     console.log(error);
   }
 }
+
+setInterval(createSnapshot, 10000);
