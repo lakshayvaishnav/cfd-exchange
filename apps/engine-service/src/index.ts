@@ -297,3 +297,7 @@ async function loadSnapshot() {
 }
 
 setInterval(createSnapshot, 10000);
+
+// understand how take profit , stop loss , and margin ,  leverage thingy works and how this engine
+// function is working study about it today and finish the whole project today only...
+async function engine() {}
