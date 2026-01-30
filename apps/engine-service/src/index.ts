@@ -95,6 +95,38 @@ function setMemBalance(userId: string, symbol: string, newVal: number) {
   return newVal;
 }
 
+async function processOrderLiquidation (
+    order : Order,
+    currentPriceForOrder: number,
+    context : string = "price-update"
+) {
+    if (!currentPriceForOrder || !Number.isFinite(currentPriceForOrder) || currentPriceForOrder <= 0) {
+        console.log(`${context}: Invalid price for order ${order.id}, skipping liquidation check`)
+        return {liquidated : false, pnl : 0};
+    }
+
+    const pnl = order.side === "long" ? (currentPriceForOrder - order.openingPrice) * order.qty : (order.openingPrice - currentPriceForOrder) * order.qty
+
+    if(!Number.isFinite(pnl)) return {liquidated : false, pnl : 0}
+
+    let reason: "TakeProfit" | "StopLoss" | "margin" | undefined;
+
+    // TP
+    if (!reason && order.takeProfit && order.takeProfit > 0) {
+      const hit = order.side === "long"
+      ? currentPriceForOrder >= order.takeProfit
+      : currentPriceForOrder <= order.takeProfit;
+
+      if(hit) {
+        reason = "TakeProfit";
+        console.log(`${context}: Take Profit hit order ${order.id} (${order.side} : price ${currentPriceForOrder} vs TP ${order.takeProfit})`)
+      }
+    }
+
+    // SL
+    
+}
+
 async function checkLiquidations() {
   for (let i = open_orders.length - 1; i >= 0; i--) {
     const order = open_orders[i];
@@ -102,5 +134,44 @@ async function checkLiquidations() {
     if (!order) continue;
 
     const symbol = order.asset;
+    const currentBidPrice = bidPrices[symbol];
+    const currentAskPrice = askPrices[symbol];
+
+    // skip if we don't have valid price data for this asset
+    if (!currentBidPrice || !currentAskPrice) continue;
+
+    const currentPriceForOrder =
+      order.side === "long" ? currentBidPrice : currentAskPrice;
+
+    // process order liquidation....
   }
 }
+
+async function loadSnapshot() {
+  try {
+    const dbOrders = await prisma.order.findMany({ where: { status: "open" } });
+
+    open_orders = dbOrders.map((order: any) => ({
+      id: order.id,
+      userId: order.userId,
+      asset: "BTC",
+      side: order.side as "long" | "short",
+      qty: order.qty / 100,,
+      leverage : order.leverage,
+      openingPrice: order.openingPrice / 10000,
+      createdAt : order.createdAt.getTime(),
+      status : "open",
+      takeProfit: (order.takeProfit && order.takeProfit > 0) ? order.takeProfit / 10000 : undefined,
+      stopLoss: (order.stopLoss && order.stopLoss > 0) ? order.stopLoss /10000 : undefined,
+    }));
+
+     console.log(`loaded ${open_orders.length} open orders from the database`);
+    console.log("Order IDs loaded:", open_orders.map((o) => `${o.id.slice(0, 8)}...`));
+
+    balances = {};
+  } catch (error) {
+    console.log(error)
+  }
+}
+
+
