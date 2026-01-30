@@ -46,11 +46,7 @@ function getFieldValue(fields: string[], key: string) {
   return undefined;
 }
 
-async function updateBalanceInDatabase(
-  userId: string,
-  symbol: string,
-  newBalanceFloat: number,
-) {
+async function updateBalanceInDatabase(userId: string, symbol: string, newBalanceFloat: number) {
   try {
     await prisma.asset.upsert({
       where: { user_symbol_unique: { userId, symbol: symbol as any } },
@@ -68,11 +64,7 @@ async function updateBalanceInDatabase(
   }
 }
 
-function getMemBalance(
-  userId: string,
-  symbol: string,
-  snapshot?: Array<{ symbol: string; balance: number; decimals: number }>,
-) {
+function getMemBalance(userId: string, symbol: string, snapshot?: Array<{ symbol: string; balance: number; decimals: number }>) {
   if (!balances[userId]) balances[userId] = {};
 
   if (snapshot) {
@@ -95,36 +87,104 @@ function setMemBalance(userId: string, symbol: string, newVal: number) {
   return newVal;
 }
 
-async function processOrderLiquidation (
-    order : Order,
-    currentPriceForOrder: number,
-    context : string = "price-update"
-) {
-    if (!currentPriceForOrder || !Number.isFinite(currentPriceForOrder) || currentPriceForOrder <= 0) {
-        console.log(`${context}: Invalid price for order ${order.id}, skipping liquidation check`)
-        return {liquidated : false, pnl : 0};
+/*
+it checks three conditions
+1. take profit
+2. stop loss
+3. Margin liquidation (forced close)
+
+if any condition hits
+- close the order
+- updates the balance
+- presists order closure in DB
+- emits a callback event
+
+Liquidation here = force-closing a leveraged position when margin is almost gone.
+*/
+async function processOrderLiquidation(order: Order, currentPriceForOrder: number, context: string = "price-update") {
+  if (!currentPriceForOrder || !Number.isFinite(currentPriceForOrder) || currentPriceForOrder <= 0) {
+    console.log(`${context}: Invalid price for order ${order.id}, skipping liquidation check`);
+    return { liquidated: false, pnl: 0 };
+  }
+
+  // long -> price goes up = profit
+  // short -> price goes down = profit
+  const pnl = order.side === "long" ? (currentPriceForOrder - order.openingPrice) * order.qty : (order.openingPrice - currentPriceForOrder) * order.qty;
+
+  if (!Number.isFinite(pnl)) return { liquidated: false, pnl: 0 };
+
+  let reason: "TakeProfit" | "StopLoss" | "margin" | undefined;
+
+  // TP - controlled exit , not liquidation
+  // margin + pnl returned to user.
+  if (!reason && order.takeProfit && order.takeProfit > 0) {
+    const hit = order.side === "long" ? currentPriceForOrder >= order.takeProfit : currentPriceForOrder <= order.takeProfit;
+
+    if (hit) {
+      reason = "TakeProfit";
+      console.log(`${context}: Take Profit hit order ${order.id} (${order.side} : price ${currentPriceForOrder} vs TP ${order.takeProfit})`);
     }
+  }
 
-    const pnl = order.side === "long" ? (currentPriceForOrder - order.openingPrice) * order.qty : (order.openingPrice - currentPriceForOrder) * order.qty
+  // SL
+  if (!reason && order.stopLoss && order.stopLoss > 0) {
+    const hit = order.side === "long" ? currentPriceForOrder <= order.stopLoss : currentPriceForOrder >= order.stopLoss;
 
-    if(!Number.isFinite(pnl)) return {liquidated : false, pnl : 0}
-
-    let reason: "TakeProfit" | "StopLoss" | "margin" | undefined;
-
-    // TP
-    if (!reason && order.takeProfit && order.takeProfit > 0) {
-      const hit = order.side === "long"
-      ? currentPriceForOrder >= order.takeProfit
-      : currentPriceForOrder <= order.takeProfit;
-
-      if(hit) {
-        reason = "TakeProfit";
-        console.log(`${context}: Take Profit hit order ${order.id} (${order.side} : price ${currentPriceForOrder} vs TP ${order.takeProfit})`)
-      }
+    if (hit) {
+      reason = "StopLoss";
+      console.log(`${context}: Stop loss hit for order ${order.id} (${order.side}): price ${currentPriceForOrder} vs SL ${order.stopLoss}`);
     }
+  }
 
-    // SL
-    
+  if (!reason && order.leverage) {
+    const initialMargin = (order.openingPrice * order.qty) / order.leverage;
+    const remainingMargin = initialMargin + pnl;
+    const liquidationThreshold = initialMargin * 0.05;
+
+    if (remainingMargin <= liquidationThreshold) {
+      reason = "margin";
+      console.log(`${context} liquidation: order ${order.id} liquidated (remaining: ${remainingMargin}, threshold: ${liquidationThreshold})`);
+    }
+  }
+
+  if (!reason) return { liquidated: false, pnl };
+
+  if (!balances[order.userId]) balances[order.userId] = {};
+
+  if (reason === "margin") {
+    const initialMargin = (order.openingPrice * order.qty) / (order.leverage || 1);
+    const remainingMargin = Math.max(0, initialMargin + pnl);
+    const newBal = setMemBalance(order.userId, "USDC", (balances[order.userId]?.USDC || 0) + remainingMargin);
+    await updateBalanceInDatabase(order.userId, "USDC", newBal);
+    console.log(`Liquidated order ${order.id}: remaining margin = ${remainingMargin}`);
+  } else {
+    const initialMargin = (order.openingPrice * order.qty) / (order.leverage || 1);
+    const credit = initialMargin + pnl;
+    const newBal = setMemBalance(order.userId, "USDC", (balances[order.userId]?.USDC || 0) + credit);
+    await updateBalanceInDatabase(order.userId, "USDC", newBal);
+    console.log(`Closed order ${order.id} (${reason}): returned ${credit}`);
+  }
+
+  try {
+    await prisma.order.update({
+      where: { id: order.id },
+      data: {
+        status: "closed",
+        pnl: Math.round(pnl * 10000),
+        closingPrice: Math.round(currentPriceForOrder * 10000),
+        closedAt: new Date(),
+        closeReason: reason as any,
+      },
+    });
+  } catch (error) {
+    console.log(`error on ${context} closing:`, error);
+  }
+
+  await client
+    .xadd(CALLBACK_QUEUE, "*", "id", order.id, "status", "closed", "reason", reason, "pnl", pnl.toString())
+    .catch((err) => console.error(`Failed to send ${context} liquidation callback: `, err));
+
+  return { liquidated: true, pnl, reason };
 }
 
 async function checkLiquidations() {
@@ -140,8 +200,7 @@ async function checkLiquidations() {
     // skip if we don't have valid price data for this asset
     if (!currentBidPrice || !currentAskPrice) continue;
 
-    const currentPriceForOrder =
-      order.side === "long" ? currentBidPrice : currentAskPrice;
+    const currentPriceForOrder = order.side === "long" ? currentBidPrice : currentAskPrice;
 
     // process order liquidation....
   }
@@ -156,22 +215,23 @@ async function loadSnapshot() {
       userId: order.userId,
       asset: "BTC",
       side: order.side as "long" | "short",
-      qty: order.qty / 100,,
-      leverage : order.leverage,
+      qty: order.qty / 100,
+      leverage: order.leverage,
       openingPrice: order.openingPrice / 10000,
-      createdAt : order.createdAt.getTime(),
-      status : "open",
-      takeProfit: (order.takeProfit && order.takeProfit > 0) ? order.takeProfit / 10000 : undefined,
-      stopLoss: (order.stopLoss && order.stopLoss > 0) ? order.stopLoss /10000 : undefined,
+      createdAt: order.createdAt.getTime(),
+      status: "open",
+      takeProfit: order.takeProfit && order.takeProfit > 0 ? order.takeProfit / 10000 : undefined,
+      stopLoss: order.stopLoss && order.stopLoss > 0 ? order.stopLoss / 10000 : undefined,
     }));
 
-     console.log(`loaded ${open_orders.length} open orders from the database`);
-    console.log("Order IDs loaded:", open_orders.map((o) => `${o.id.slice(0, 8)}...`));
+    console.log(`loaded ${open_orders.length} open orders from the database`);
+    console.log(
+      "Order IDs loaded:",
+      open_orders.map((o) => `${o.id.slice(0, 8)}...`),
+    );
 
     balances = {};
   } catch (error) {
-    console.log(error)
+    console.log(error);
   }
 }
-
-
