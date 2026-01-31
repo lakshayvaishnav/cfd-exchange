@@ -309,6 +309,134 @@ async function engine() {
 
       const [, messages] = response[0]!;
       if (!messages || !messages.length) continue;
+
+      for (const [id, fields] of messages) {
+        lastId = id;
+        const raw = getFieldValue(fields as string[], "data");
+        if (!raw) continue;
+
+        let msg: any;
+        try {
+          msg = JSON.parse(raw);
+          console.log(`[ENGINE] Received : ${msg}`);
+        } catch (error) {
+          console.log(`[ENGINE] Failed to parse ${raw}`);
+          continue;
+        }
+
+        const { kind, payload } = msg.request || msg;
+
+        switch (kind) {
+          case "price-update": {
+            const data = payload?.data || payload;
+            if (data && data.s) {
+              const s = typeof data.s === "string" ? data.s : "";
+              const rawSymbol = s.endsWith("_USDC") ? s.replace("_USDC", "") : s;
+              const symbol = rawSymbol.toUpperCase();
+              const bidPrice = safeNum(data.b, 0);
+              const askPrice = safeNum(data.a, 0);
+
+              if (bidPrice > 0 && askPrice > 0) {
+                const currentPrice = (bidPrice + askPrice) / 2;
+                prices[symbol] = currentPrice;
+                bidPrices[symbol] = bidPrice;
+                askPrices[symbol] = askPrice;
+                console.log(`[ENGINE] Price updated: ${symbol} = ${currentPrice.toFixed(2)} (bid ${bidPrice.toFixed(2)}, ask ${askPrice.toFixed(2)})`);
+
+                for (let i = open_orders.length - 1; i >= 0; i--) {
+                  const order = open_orders[i];
+                  if (!order || order.asset !== symbol) continue;
+
+                  const curr = order.side === "long" ? bidPrice : askPrice;
+                  const result = await processOrderLiquidation(order, curr, "price-update");
+                  if (result.liquidated) open_orders.splice(i, 1);
+                }
+              }
+            }
+            break;
+          }
+
+          case "create-order": {
+            console.log(`[ENGINE] Processing create-order:`, payload);
+            const { id: orderId, userId, asset: rawAsset, side: rawSide, qty, leverage, balanceSnapshot, takeProfit, stopLoss } = payload ?? {};
+
+            const asset = rawAsset ? rawAsset.toUpperCase() : "";
+            const side = rawSide as "long" | "short";
+
+            const q = safeNum(qty, NaN);
+            const lev = safeNum(leverage, 1);
+            if (!userId || !asset || !side || !orderId || !Number.isFinite(q) || q <= 0) {
+              console.log("missing/invalid fields", { orderId, userId, asset, q, side });
+              await client.xadd(CALLBACK_QUEUE, "*", "id", orderId || "unknown", "status", "invalid_order").catch((err) => console.error("Failed to send invalid_order:", err));
+              break;
+            }
+
+            if (open_orders.some((o) => o.id === orderId)) {
+              console.log(`[ENGINE] Duplicate create-order ${orderId} ignored`);
+              await client.xadd(CALLBACK_QUEUE, "*", "id", orderId, "status", "created").catch((err) => console.error("Failed to send created callback:", err));
+              break;
+            }
+
+            const bidPrice = bidPrices[asset];
+            const askPrice = askPrices[asset];
+            if (!bidPrice || !askPrice) {
+              console.log("no price available", { orderId, asset, availablePrices: Object.keys(bidPrices) });
+              await client.xadd(CALLBACK_QUEUE, "*", "id", orderId, "status", "no_price").catch((err) => console.error("Failed to send no_price:", err));
+              break;
+            }
+
+            const openingPrice = side === "long" ? askPrice : bidPrice;
+            const requiredMargin = (openingPrice * q) / (lev || 1);
+
+            const usdc = getMemBalance(userId, "USDC", balanceSnapshot);
+            console.log(`[ENGINE] Balance check for order ${orderId}:`, {
+              userId,
+              usdc,
+              requiredMargin,
+              openingPrice,
+              qty: q,
+              leverage: lev,
+              hasEnoughBalance: usdc >= requiredMargin,
+            });
+
+            if (usdc >= requiredMargin) {
+              const newBal = setMemBalance(userId, "USDC", usdc - requiredMargin);
+              await updateBalanceInDatabase(userId, "USDC", newBal);
+
+              const order: Order = {
+                id: orderId,
+                userId,
+                asset,
+                side,
+                qty: q,
+                leverage: lev || 1,
+                openingPrice,
+                createdAt: Date.now(),
+                status: "open",
+                takeProfit: takeProfit != null && Number.isFinite(Number(takeProfit)) && Number(takeProfit) > 0 ? Number(takeProfit) : undefined,
+                stopLoss: stopLoss != null && Number.isFinite(Number(stopLoss)) && Number(stopLoss) > 0 ? Number(stopLoss) : undefined,
+              };
+
+              open_orders.push(order);
+              console.log(`Order created: ${orderId} for user ${userId}`, {
+                side: order.side,
+                qty: order.qty,
+                openingPrice: order.openingPrice,
+                leverage: order.leverage,
+                takeProfit: order.takeProfit ? order.takeProfit : "not set",
+                stopLoss: order.stopLoss ? order.stopLoss : "not set",
+                createdAt: new Date(order.createdAt).toISOString(),
+              });
+
+              await client.xadd(CALLBACK_QUEUE, "*", "id", orderId, "status", "created").catch((err) => console.error("Failed to send created callback:", err));
+            } else {
+              console.log("Insufficient balance", { orderId, userId, requiredMargin, usdc });
+              await client.xadd(CALLBACK_QUEUE, "*", "id", orderId, "status", "insufficient_balance").catch((err) => console.error("Failed to send insufficient_balance:", err));
+            }
+            break;
+          }
+        }
+      }
     } catch (error) {}
   }
 }
