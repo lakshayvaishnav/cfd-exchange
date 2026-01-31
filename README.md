@@ -133,3 +133,159 @@ Learn more about the power of Turborepo:
 - [Filtering](https://turborepo.dev/docs/crafting-your-repository/running-tasks#using-filters)
 - [Configuration Options](https://turborepo.dev/docs/reference/configuration)
 - [CLI Usage](https://turborepo.dev/docs/reference/command-line-reference)
+
+--------- what is needed to improve ---------------
+
+| Feature         | Status         |
+| --------------- | -------------- |
+| Price feed      | ✅ External    |
+| Execution       | ✅ Instant     |
+| Liquidation     | ✅ Implemented |
+| Spread          | ✅ Implemented |
+| Risk management | ❌ Missing     |
+| Hedging         | ❌ Missing     |
+| Exposure caps   | ❌ Missing     |
+
+# Tradeoffs
+
+⚠️ 1. Engine must manage risk
+
+Because your engine is the counterparty to every trade.
+
+What this means
+
+If users win money → engine loses money
+
+Example:
+
+100 users go LONG BTC
+BTC pumps +10%
+
+Each user profits.
+
+💥 Who pays them?
+→ Your engine’s balance.
+
+In real exchanges:
+
+Exchange is neutral
+
+One trader’s loss = another trader’s profit
+
+In your engine:
+
+User profit = engine loss
+
+Why this is dangerous
+
+If price moves strongly one direction:
+
+All users can win together
+
+Engine gets wiped
+
+This is called directional exposure.
+
+⚠️ 2. Engine is the market maker
+
+Market maker = entity that always takes the opposite side.
+
+In your engine:
+
+User Engine
+Long Short
+Short Long
+
+This is fine only if:
+
+Positions are balanced
+
+Or hedged externally
+
+Your engine does neither yet.
+
+Example failure scenario
+BTC price = 50,000
+Everyone believes BTC will pump
+
+100 users:
+
+Long 10x leverage
+
+Large size
+
+BTC goes to 55,000.
+
+Users:
+
+Massive profit
+
+Engine:
+
+Massive loss
+
+Possibly bankrupt
+
+⚠️ 3. Engine must cap exposure
+
+Since engine carries risk, it must limit it.
+
+Common exposure caps (used in real systems)
+Control Purpose
+Max leverage Limit blowups
+Max position size Prevent whales
+Max total open interest Cap total risk
+Asset-wise limits Prevent BTC-only risk
+What happens if you don’t cap?
+
+Single whale could:
+
+Go 100x long
+
+On illiquid price feed
+
+Drain entire system
+
+Your engine currently has:
+❌ No max leverage check
+❌ No max open interest
+❌ No per-user cap
+❌ No global exposure limit
+
+This is fine for learning, not for production.
+
+⚠️ 4. How real exchanges avoid this (hedging)
+
+Real exchanges do NOT want directional risk.
+
+They do one of these:
+
+A) Order-book futures (Binance Futures)
+
+Traders trade against each other
+
+Exchange earns fees only
+
+No directional exposure
+
+Hard to build.
+
+B) Internalized but hedged (CFD brokers)
+
+Your engine model + extra step:
+
+User opens LONG BTC
+
+Engine opens real SHORT BTC on Binance
+
+Price moves
+
+Engine profits externally → pays user
+
+This is called delta hedging.
+
+C) AMM-based (like Perp DEXs)
+
+Price shifts automatically based on imbalance.
+
+Your engine does not do this either.

@@ -298,6 +298,17 @@ async function loadSnapshot() {
 
 setInterval(createSnapshot, 10000);
 
-// understand how take profit , stop loss , and margin ,  leverage thingy works and how this engine
-// function is working study about it today and finish the whole project today only...
-async function engine() {}
+async function engine() {
+  console.log("Starting trading engine on port 3002");
+  await loadSnapshot();
+
+  while (true) {
+    try {
+      const response = await client.xread("BLOCK", 0, "STREAMS", ENGINE_STREAM, lastId);
+      if (!response || !response.length) continue;
+
+      const [, messages] = response[0]!;
+      if (!messages || !messages.length) continue;
+    } catch (error) {}
+  }
+}
