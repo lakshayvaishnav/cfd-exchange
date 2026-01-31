@@ -78,7 +78,7 @@ function getMemBalance(userId: string, symbol: string, snapshot?: Array<{ symbol
     }
   }
 
-  return balances[userId][symbol];
+  return balances[userId][symbol]!;
 }
 
 function setMemBalance(userId: string, symbol: string, newVal: number) {
