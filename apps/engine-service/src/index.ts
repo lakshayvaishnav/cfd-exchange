@@ -377,7 +377,7 @@ async function engine() {
               break;
             }
 
-            const bidPrice = bidPrices[asset];
+            const bidPrice = bidPrices[asset]; // doubt how the prices are coming if they are an array.
             const askPrice = askPrices[asset];
             if (!bidPrice || !askPrice) {
               console.log("no price available", { orderId, asset, availablePrices: Object.keys(bidPrices) });
@@ -435,8 +435,77 @@ async function engine() {
             }
             break;
           }
+          case "close-order": {
+            console.log(`[ENGINE] Processing close-order:`, payload);
+            const { orderId, userId, closeReason, pnl } = payload ?? {};
+            if (!orderId || !userId) {
+              await client.xadd(CALLBACK_QUEUE, "*", "id", orderId || "unknown", "status", "invalid_close_request").catch((err) => console.error("Failed to send invalid_close_request:", err));
+              break;
+            }
+
+            const idx = open_orders.findIndex((o) => o.id === orderId && o.userId === userId);
+            if (idx === -1) {
+              await client.xadd(CALLBACK_QUEUE, "*", "id", orderId, "status", "order_not_found").catch((err) => console.error("Failed to send order_not_found:", err));
+              break;
+            }
+
+            const order = open_orders[idx]!;
+            const symbol = order.asset;
+
+            let finalPnl: number | undefined = Number.isFinite(Number(pnl)) ? Number(pnl) : undefined;
+            let closingPrice = 0;
+
+            if (finalPnl === undefined) {
+              const currentBidPrice = bidPrices[symbol];
+              const currentAskPrice = askPrices[symbol];
+
+              if (currentBidPrice && currentAskPrice) {
+                const currentPriceForOrder = order.side === "long" ? currentBidPrice : currentAskPrice;
+                closingPrice = currentPriceForOrder;
+                finalPnl = order.side === "long" ? (currentPriceForOrder - order.openingPrice) * order.qty : (order.openingPrice - currentPriceForOrder) * order.qty;
+              } else {
+                closingPrice = order.openingPrice;
+                finalPnl = 0;
+                console.log(`No price available for ${symbol} when closing order ${order.id}, using opening price`);
+              }
+            }
+
+            if (!balances[userId]) balances[userId] = {};
+
+            const initialMargin = (order.openingPrice * order.qty) / (order.leverage || 1);
+            const newBal = setMemBalance(userId, "USDC", (balances[userId].USDC || 0) + initialMargin + (finalPnl || 0));
+            await updateBalanceInDatabase(userId, "USDC", newBal);
+
+            try {
+              await prisma.order.update({
+                where: { id: orderId },
+                data: {
+                  status: "closed",
+                  pnl: Math.round((finalPnl || 0) * 10000),
+                  closingPrice: Math.round((closingPrice || order.openingPrice) * 10000),
+                  closedAt: new Date(),
+                  closeReason: (closeReason || "Manual") as any,
+                },
+              });
+            } catch (e) {
+              console.log("error on manual closing", e);
+            }
+
+            open_orders.splice(idx, 1);
+
+            await client
+              .xadd(CALLBACK_QUEUE, "*", "id", orderId, "status", "closed", "reason", closeReason || "Manual", "pnl", String(finalPnl || 0))
+              .catch((err) => console.error("Failed to send close success callback:", err));
+
+            break;
+          }
+
+          default: // understand how other conditions are working for apartf rom create order and close order.
+            break;
         }
       }
-    } catch (error) {}
+    } catch (error) {
+      console.error("engine errored while looping : ", error);
+    }
   }
 }
