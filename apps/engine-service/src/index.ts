@@ -500,7 +500,7 @@ async function engine() {
             break;
           }
 
-          default: // understand how other conditions are working for apartf rom create order and close order.
+          default: // understand how other conditions are working for apart from create order and close order.
             break;
         }
       }
