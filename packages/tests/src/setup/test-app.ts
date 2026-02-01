@@ -277,12 +277,20 @@ const depositBalance = async (req: Request, res: Response) => {
 
   // Try to publish to Redis, but don't fail the request if Redis is unavailable
   try {
-    await redis.xadd("engine-stream", "*", {
-      data: JSON.stringify({
+    await redis.xadd(
+      "engine-stream",
+      "*",
+      "data",
+      JSON.stringify({
         kind: "balance-update",
-        payload: { userId, symbol, newBalance: updated.balance, decimals: updated.decimals },
+        payload: {
+          userId,
+          symbol,
+          newBalance: updated.balance,
+          decimals: updated.decimals,
+        },
       }),
-    });
+    );
   } catch (err) {
     // Redis not available in test environment, ignore
     console.warn("Redis publish failed:", err);
