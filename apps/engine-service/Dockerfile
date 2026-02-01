@@ -14,11 +14,10 @@ COPY --from=prepare /app/out/full/ .
 WORKDIR /app/packages/prisma
 RUN npx prisma generate
 RUN npx tsc -b
-WORKDIR /app/appes/engine-service
+WORKDIR /app/apps/engine-service
 RUN npx tsc -b
 
 FROM base AS runner
-WORKDIR /app
 WORKDIR /app
 COPY --from=builder /app/apps/engine-service/dist/ .
 EXPOSE 3002
