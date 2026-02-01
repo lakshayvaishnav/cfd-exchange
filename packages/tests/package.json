@@ -1,0 +1,38 @@
+{
+  "name": "@repo/tests",
+  "version": "1.0.0",
+  "description": "Comprehensive test suite for CFD Exchange",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "test:api": "vitest run --testPathPattern=api",
+    "test:engine": "vitest run --testPathPattern=engine",
+    "test:integration": "vitest run --testPathPattern=integration"
+  },
+  "dependencies": {
+    "@prisma/client": "^7.3.0",
+    "@repo/database": "workspace:*",
+    "@repo/redis": "workspace:*",
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.2",
+    "express": "^5.1.0",
+    "cookie-parser": "^1.4.7",
+    "jsonwebtoken": "^9.0.2",
+    "redis": "^5.3.0",
+    "supertest": "^7.0.0",
+    "zod": "^4.1.11"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.19",
+    "@types/node": "^20.11.0",
+    "@types/supertest": "^6.0.2",
+    "@types/express": "^5.0.3",
+    "@types/cookie-parser": "^1.4.9",
+    "@types/jsonwebtoken": "^9.0.10",
+    "typescript": "5.9.2",
+    "vitest": "^3.0.0"
+  }
+}
