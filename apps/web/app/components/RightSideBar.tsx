@@ -58,6 +58,12 @@ const RightSideBar: React.FC<RightSideBarProps> = ({ selectedSymbol }) => {
   const [leverage, setLeverage] = useState(1);
   const [isMobileTradeOpen, setIsMobileTradeOpen] = useState(false);
 
+  /*
+  -> iterates through websocket messages
+  -> finds latest trade for selected symbol
+  -> extracts : last trade price, best bid, best ask
+  -> metges them into one object
+  */
   const currentSymbolData = useMemo(() => {
     let latestTrade = null;
     for (const message of messages) {
@@ -97,6 +103,7 @@ const RightSideBar: React.FC<RightSideBarProps> = ({ selectedSymbol }) => {
 
   const lastTradePrice = currentSymbolData?.data?.p ? parseFloat(currentSymbolData.data.p) : null;
 
+  // balance normalization
   const availableBalance = useMemo(() => {
     if (!balanceData?.balances) return 0;
     const usdcBalance = balanceData.balances.find((balance) => balance.symbol === "USDC");
