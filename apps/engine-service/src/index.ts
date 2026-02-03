@@ -31,7 +31,7 @@ let askPrices: Record<string, number> = {};
 let lastId = "$";
 
 const CALLBACK_QUEUE = "callback-queue";
-const ENGINE_STREAM = "engine_stream";
+const ENGINE_STREAM = "engine-stream";
 
 function safeNum(n: any, def = 0) {
   const v = Number(n);
