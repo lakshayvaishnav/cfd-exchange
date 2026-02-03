@@ -18,22 +18,21 @@ const getSliderStyle = (selectedIndex: number) => {
 
 interface TradeData {
   data: {
-    e: string;
-    E: number;
-    a: number;
-    s: string;
-    p: string;
-    q: string;
-    f: number;
-    l: number;
-    T: number;
-    m: boolean;
+    e: string; // Event type
+    E: number; // Event time
+    a: number; // Aggregate trade ID
+    s: string; // Symbol (e.g., "BTCUSDT")
+    p: string; // Price
+    q: string; // Quantity
+    f: number; // First trade ID
+    l: number; // Last trade ID
+    T: number; // Trade time
+    m: boolean; // Is buyer the market maker?
   };
-  bid: number;
-  ask: number;
-  timestamp: string;
+  bid: number; // Current bid price
+  ask: number; // Current ask price
+  timestamp: string; // When this data was received
 }
-
 interface OrderData {
   quantity: number;
   orderType: "long" | "short";
