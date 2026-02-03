@@ -11,8 +11,8 @@ COPY --from=prepare /app/out/json/ .
 COPY --from=prepare /app/out/pnpm-lock.yaml .
 RUN pnpm install --no-frozen-lockfile
 COPY --from=prepare /app/out/full/ .
-WORKDIR /app/packages/prisma
-RUN npx prisma generate
+WORKDIR /app/packages/database
+RUN DATABASE_URL="postgresql://dummy:dummy@localhost:5432/dummy" npx prisma generate
 RUN npx tsc -b
 WORKDIR /app/apps/api-service
 RUN npx tsc -b

@@ -1,0 +1,61 @@
+services:
+  redis:
+    image: redis:latest
+    ports:
+      - "6379:6379"
+
+  postgres:
+    image: postgres:latest
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  api-service:
+    build:
+      context: .
+      dockerfile: apps/api-service/Dockerfile
+    ports:
+      - "3001:3001"
+    env_file:
+      - ./apps/api-service/.env
+    depends_on:
+      - redis
+
+  engine-service:
+    build:
+      context: .
+      dockerfile: apps/engine-service/Dockerfile
+    ports:
+      - "3002:3002"
+    env_file:
+      - ./apps/engine-service/.env
+    depends_on:
+      - redis
+
+  price-poller-service:
+    build:
+      context: .
+      dockerfile: apps/price-poller-service/Dockerfile
+    ports:
+      - "3003:3003"
+    depends_on:
+      - redis
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    ports:
+      - "3000:3000"
+    env_file:
+      - ./apps/web/.env
+    depends_on:
+      - api-service
+
+volumes:
+  postgres_data:
