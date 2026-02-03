@@ -7,7 +7,7 @@ const ws = new WebSocket(url);
 console.log("Starting Price Poller service on port 3003");
 
 redis.on("connect", () => {
-  console.log("connected ro redis");
+  console.log("connected to redis");
 });
 
 redis.on("error", (err) => {

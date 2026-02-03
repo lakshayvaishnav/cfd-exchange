@@ -3,32 +3,23 @@ import cors from "cors";
 import cookieParser from "cookie-parser";
 import authRouter from "./routes/auth.routes";
 import balanceRouter from "./routes/balance.routes";
+import tradeRouter from "./routes/trade.route";
+import candleRouter from "./routes/candles.route";
 
 const app = express();
 const PORT = process.env.PORT || 3001;
 
 app.use(
   cors({
-    origin: [
-      "http://localhost:3200",
-      "http://localhost:3000",
-      "http://localhost:3001",
-    ],
+    origin: ["http://localhost:3200", "http://localhost:3000", "http://localhost:3001"],
     credentials: true,
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allowedHeaders: [
-      "Content-Type",
-      "Authorization",
-      "Cookie",
-      "X-Requested-With",
-    ],
+    allowedHeaders: ["Content-Type", "Authorization", "Cookie", "X-Requested-With"],
   }),
 );
 
 app.use((req, res, next) => {
-  console.log(
-    `${new Date().toISOString()} - ${req.method} ${req.path} - Origin: ${req.get("origin")}`,
-  );
+  console.log(`${new Date().toISOString()} - ${req.method} ${req.path} - Origin: ${req.get("origin")}`);
   next();
 });
 
@@ -41,6 +32,8 @@ app.get("/health", (req, res) => {
 
 app.use("/auth", authRouter);
 app.use("/balance", balanceRouter);
+app.use("/candles", candleRouter);
+app.use("/trade", tradeRouter);
 
 app.listen(PORT, () => {
   console.log(`API service running on port ${PORT}`);

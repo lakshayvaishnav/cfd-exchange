@@ -32,7 +32,7 @@ export const useWs = () => {
               id: 1,
             };
             ws.send(JSON.stringify(tradeSubscribeMessage));
-            console.log("Sent subscription for trade.BTC_USDC:", tradeSubscribeMessage);
+            console.log("✅✅✅ Sent subscription for trade.BTC_USDC:", tradeSubscribeMessage);
 
             // Subscribe to depth stream
             setTimeout(() => {
