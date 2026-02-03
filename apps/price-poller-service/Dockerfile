@@ -6,7 +6,7 @@ FROM base AS prepare
 COPY . .
 RUN turbo prune price-poller-service --docker
 
-FROM base as BUILDER
+FROM base as builder
 COPY --from=prepare /app/out/json/ .
 COPY --from=prepare /app/out/pnpm-lock.yaml .
 RUN pnpm install --no-frozen-lockfile
