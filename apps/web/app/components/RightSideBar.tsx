@@ -592,3 +592,18 @@ const RightSideBar: React.FC<RightSideBarProps> = ({ selectedSymbol }) => {
 };
 
 export default RightSideBar;
+
+/*
+⚠️ Improvements (next level)
+
+Replace alert() with toast system
+
+Debounce WS parsing
+
+Move validation logic into custom hook
+
+Memoize handlers with useCallback
+
+Add loading/error states for balance
+
+*/

@@ -342,3 +342,17 @@ const Marketplace = () => {
 };
 
 export default Marketplace;
+
+/*
+⚠️ What to Improve (Next Tier)
+
+Memoize initChart with useCallback
+
+Extract chart logic into useTradingChart
+
+Add WebSocket candle updates
+
+Persist panel sizes to localStorage
+
+Sync interval change → refetch + reset zoom
+*/
